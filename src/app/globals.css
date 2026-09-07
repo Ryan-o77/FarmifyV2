@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-soil-50 text-soil-900 antialiased;
+}
+
+/* Punjabi and Hmong render small in most system stacks; nudge the base size up
+   so a plan pinned to a pump house wall stays readable. */
+[lang="pa"] {
+  font-size: 1.06em;
+  line-height: 1.75;
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-soil-100 bg-white shadow-sm;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-soil-900;
+  }
+
+  .hint {
+    @apply mt-1 text-xs text-soil-600;
+  }
+
+  .input,
+  .select {
+    @apply mt-1 w-full rounded-lg border border-soil-100 bg-white px-3 py-2 text-sm
+      text-soil-900 shadow-sm outline-none transition
+      focus:border-leaf-500 focus:ring-2 focus:ring-leaf-500/30;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+      text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply btn bg-leaf-600 text-white hover:bg-leaf-700 focus:ring-leaf-500;
+  }
+
+  .btn-secondary {
+    @apply btn border border-soil-100 bg-white text-soil-900 hover:bg-soil-50 focus:ring-soil-600;
+  }
+
+  .btn-water {
+    @apply btn bg-water-600 text-white hover:bg-water-700 focus:ring-water-500;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Print. The weekly plan is meant to be printed and carried into the field or
+   handed to a crew, so the print stylesheet is a first-class part of the app
+   rather than an afterthought: navigation and controls disappear, colours become
+   ink-safe, and no irrigation set is ever split across a page break.
+   --------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 0.5in;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    font-size: 12pt;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .card {
+    border: 1px solid #999 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-step {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  a[href]::after {
+    content: "";
+  }
+}
+
+.print-only {
+  display: none;
+}
