@@ -1,0 +1,13 @@
+# Netlify deploys the static export directly; no serverless runtime is involved.
+[build]
+  command = "npm run build"
+  publish = "out"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Long-lived caching for fingerprinted build assets.
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

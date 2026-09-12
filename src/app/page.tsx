@@ -1,32 +1,57 @@
+"use client";
+
 import Link from "next/link";
-import { listFarms } from "@/lib/store";
+import { useMemo } from "react";
+import { useStore, useToday } from "@/lib/useStore";
 import { buildFieldPlan } from "@/lib/plan/engine";
 import { todayLine } from "@/lib/plan/simplify";
 import { getStation, toIsoDate } from "@/lib/climate/station";
 import { getCrop } from "@/lib/agronomy/crops";
+import { Loading } from "@/components/Loading";
+import { BackupControls } from "@/components/BackupControls";
 
-export const dynamic = "force-dynamic";
+export default function HomePage() {
+  const { store, ready, refresh } = useStore();
+  const today = useToday();
 
-export default async function HomePage() {
-  const farms = await listFarms();
-  const today = new Date();
-  const todayIso = toIsoDate(today);
+  const farms = store?.farms ?? [];
+  const todayIso = today ? toIsoDate(today) : null;
+
+  // Building a plan per field is real work, so it is done once per store change
+  // rather than on every render.
+  const plans = useMemo(() => {
+    if (!today) return new Map<string, ReturnType<typeof buildFieldPlan>>();
+    const out = new Map<string, ReturnType<typeof buildFieldPlan>>();
+    for (const farm of farms) {
+      for (const field of farm.fields) {
+        try {
+          out.set(`${farm.id}:${field.id}`, buildFieldPlan(farm, field, { referenceDate: today }));
+        } catch {
+          // A field saved by an older version could reference a crop that no
+          // longer exists. Skip it rather than taking the whole page down.
+        }
+      }
+    }
+    return out;
+  }, [farms, today]);
+
+  if (!ready || !today || !todayIso) {
+    return (
+      <div className="space-y-6">
+        <Header />
+        <Loading />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <section>
-        <h1 className="text-2xl font-bold tracking-tight">Farms</h1>
-        <p className="mt-1 max-w-2xl text-sm text-soil-600">
-          Every field gets its own irrigation plan, built from the crop, the soil, the
-          irrigation system and the weather record at the nearest station. Open a farm to see
-          this week&apos;s schedule.
-        </p>
-      </section>
+      <Header />
 
       {farms.length === 0 ? (
         <div className="card p-8 text-center">
-          <p className="text-sm text-soil-600">No farms yet.</p>
-          <Link href="/farms/new" className="btn-primary mt-4">
+          <p className="text-sm text-soil-600">No farms in this browser yet.</p>
+          <Link href="/farm/settings/" className="btn-primary mt-4">
             Add the first farm
           </Link>
         </div>
@@ -39,7 +64,7 @@ export default async function HomePage() {
                 <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-soil-100 bg-soil-50/60 px-5 py-3">
                   <div>
                     <h2 className="text-lg font-semibold">
-                      <Link href={`/farms/${farm.id}`} className="hover:text-leaf-700">
+                      <Link href={`/farm/?id=${farm.id}`} className="hover:text-leaf-700">
                         {farm.name}
                       </Link>
                     </h2>
@@ -47,7 +72,7 @@ export default async function HomePage() {
                       {farm.farmerName} · {station.name}
                     </p>
                   </div>
-                  <Link href={`/farms/${farm.id}`} className="btn-secondary">
+                  <Link href={`/farm/?id=${farm.id}`} className="btn-secondary">
                     Open dashboard
                   </Link>
                 </header>
@@ -56,7 +81,7 @@ export default async function HomePage() {
                   <div className="px-5 py-6 text-sm text-soil-600">
                     No fields yet.{" "}
                     <Link
-                      href={`/farms/${farm.id}/fields/new`}
+                      href={`/field/settings/?farm=${farm.id}`}
                       className="font-semibold text-leaf-700 underline"
                     >
                       Add a field
@@ -66,7 +91,8 @@ export default async function HomePage() {
                 ) : (
                   <ul className="divide-y divide-soil-100">
                     {farm.fields.map((field) => {
-                      const plan = buildFieldPlan(farm, field, { referenceDate: today });
+                      const plan = plans.get(`${farm.id}:${field.id}`);
+                      if (!plan) return null;
                       const line = todayLine(plan, todayIso, farm.language);
                       const crop = getCrop(field.cropId);
                       return (
@@ -76,7 +102,7 @@ export default async function HomePage() {
                         >
                           <div className="min-w-0">
                             <Link
-                              href={`/farms/${farm.id}/fields/${field.id}`}
+                              href={`/field/?farm=${farm.id}&id=${field.id}`}
                               className="font-semibold hover:text-leaf-700"
                             >
                               {field.name}
@@ -96,7 +122,7 @@ export default async function HomePage() {
                               {line.text}
                             </span>
                             <Link
-                              href={`/farms/${farm.id}/fields/${field.id}/print`}
+                              href={`/field/print/?farm=${farm.id}&id=${field.id}`}
                               className="text-xs font-semibold text-leaf-700 underline"
                             >
                               Print week
@@ -113,11 +139,26 @@ export default async function HomePage() {
         </div>
       )}
 
-      <div>
-        <Link href="/farms/new" className="btn-primary">
+      <div className="flex flex-wrap gap-2">
+        <Link href="/farm/settings/" className="btn-primary">
           Add a farm
         </Link>
       </div>
+
+      <BackupControls onChanged={refresh} />
     </div>
+  );
+}
+
+function Header() {
+  return (
+    <section>
+      <h1 className="text-2xl font-bold tracking-tight">Farms</h1>
+      <p className="mt-1 max-w-2xl text-sm text-soil-600">
+        Every field gets its own irrigation plan, built from the crop, the soil, the
+        irrigation system and the weather record at the nearest station. Open a farm to see
+        this week&apos;s schedule.
+      </p>
+    </section>
   );
 }

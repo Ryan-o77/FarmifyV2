@@ -32,7 +32,7 @@ export default function MethodPage() {
               Airport weather stations sit over dry pavement, not irrigated grass, so running the
               equation on their observations overstates the answer — by about 15% here. Farmify
               corrects for that with a monthly factor that ties each station&apos;s output to the{" "}
-              <Link href="/climate" className="underline hover:text-leaf-700">
+              <Link href="/climate/" className="underline hover:text-leaf-700">
                 CIMIS reference network
               </Link>
               , so seasonal totals are locally right while day-to-day movement still comes from

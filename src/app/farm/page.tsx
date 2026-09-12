@@ -1,14 +1,16 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getFarm } from "@/lib/store";
+import { Suspense, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { useStore, useToday } from "@/lib/useStore";
 import { buildFieldPlan, selectWeek, weekStartOf } from "@/lib/plan/engine";
 import { forecastEnsemble } from "@/lib/climate/forecast";
 import { getStation, toIsoDate, addDays } from "@/lib/climate/station";
 import { getCrop } from "@/lib/agronomy/crops";
 import { EtoChart } from "@/components/Charts";
 import { roundGallons } from "@/lib/plan/simplify";
-
-export const dynamic = "force-dynamic";
+import { Loading, NotFoundCard } from "@/components/Loading";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -17,35 +19,50 @@ function dayName(iso: string): string {
   return DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 }
 
-export default async function FarmDashboard({
-  params,
-}: {
-  params: Promise<{ farmId: string }>;
-}) {
-  const { farmId } = await params;
-  const farm = await getFarm(farmId);
-  if (!farm) notFound();
+export default function FarmDashboardPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <FarmDashboard />
+    </Suspense>
+  );
+}
+
+function FarmDashboard() {
+  const params = useSearchParams();
+  const farmId = params.get("id") ?? "";
+  const { store, ready } = useStore();
+  const today = useToday();
+
+  const farm = store?.farms.find((f) => f.id === farmId) ?? null;
+
+  const weekStart = useMemo(() => (today ? weekStartOf(today) : null), [today]);
+
+  const week = useMemo(() => {
+    if (!farm || !weekStart) return [];
+    return forecastEnsemble(getStation(farm.stationId), weekStart, 7, {
+      members: 200,
+      seed: farm.id,
+    });
+  }, [farm, weekStart]);
+
+  const plans = useMemo(() => {
+    if (!farm || !today || !weekStart) return [];
+    return farm.fields.map((field) => {
+      const plan = buildFieldPlan(farm, field, { referenceDate: today });
+      return { field, plan, week: selectWeek(plan, weekStart) };
+    });
+  }, [farm, today, weekStart]);
+
+  if (!ready || !today || !weekStart) return <Loading />;
+  if (!farm) return <NotFoundCard what="farm" />;
 
   const station = getStation(farm.stationId);
-  const today = new Date();
-  const weekStart = weekStartOf(
-    new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
-  );
-
-  // The dashboard's own weather week, independent of any single field's season.
-  const week = forecastEnsemble(station, weekStart, 7, { members: 200, seed: farm.id });
   const weekEtoIn = week.reduce((s, d) => s + d.etoIn, 0);
   const weekRainIn = week.reduce((s, d) => s + d.rainIn, 0);
   const normalEtoIn = week.reduce((s, d) => s + d.normal.etoIn, 0);
-  const peakTemp = Math.max(...week.map((d) => d.tmaxF));
-  const anyHeatRisk = Math.max(...week.map((d) => d.heatRisk));
+  const peakTemp = week.length ? Math.max(...week.map((d) => d.tmaxF)) : 0;
+  const anyHeatRisk = week.length ? Math.max(...week.map((d) => d.heatRisk)) : 0;
   const etoDelta = normalEtoIn > 0 ? (weekEtoIn / normalEtoIn - 1) * 100 : 0;
-
-  const plans = farm.fields.map((field) => {
-    const plan = buildFieldPlan(farm, field, { referenceDate: today });
-    return { field, plan, week: selectWeek(plan, weekStart) };
-  });
-
   const farmWeekGallons = plans.reduce((s, p) => s + (p.week?.totalGallons ?? 0), 0);
 
   return (
@@ -62,10 +79,10 @@ export default async function FarmDashboard({
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/farms/${farmId}/fields/new`} className="btn-primary">
+          <Link href={`/field/settings/?farm=${farm.id}`} className="btn-primary">
             Add field
           </Link>
-          <Link href={`/farms/${farmId}/edit`} className="btn-secondary">
+          <Link href={`/farm/settings/?id=${farm.id}`} className="btn-secondary">
             Settings
           </Link>
         </div>
@@ -77,12 +94,11 @@ export default async function FarmDashboard({
           <div>
             <h2 className="text-lg font-semibold">This week&apos;s weather</h2>
             <p className="text-sm text-soil-600">
-              {weekStart.toISOString().slice(0, 10)} to{" "}
-              {toIsoDate(addDays(weekStart, 6))} · from the {station.id} record on Weather
-              Underground
+              {toIsoDate(weekStart)} to {toIsoDate(addDays(weekStart, 6))} · from the{" "}
+              {station.id} record on Weather Underground
             </p>
           </div>
-          <Link href="/climate" className="text-sm font-semibold text-leaf-700 underline">
+          <Link href="/climate/" className="text-sm font-semibold text-leaf-700 underline">
             See the full climate record
           </Link>
         </div>
@@ -94,15 +110,20 @@ export default async function FarmDashboard({
             detail={`${etoDelta >= 0 ? "+" : ""}${etoDelta.toFixed(0)}% vs normal`}
             tone={etoDelta > 8 ? "alert" : "neutral"}
           />
-          <Stat label="Hottest day" value={`${Math.round(peakTemp)}°F`} detail={
-            anyHeatRisk > 0.25 ? `${Math.round(anyHeatRisk * 100)}% chance of 100°F+` : "No extreme heat expected"
-          } tone={anyHeatRisk > 0.25 ? "alert" : "neutral"} />
+          <Stat
+            label="Hottest day"
+            value={`${Math.round(peakTemp)}°F`}
+            detail={
+              anyHeatRisk > 0.25
+                ? `${Math.round(anyHeatRisk * 100)}% chance of 100°F+`
+                : "No extreme heat expected"
+            }
+            tone={anyHeatRisk > 0.25 ? "alert" : "neutral"}
+          />
           <Stat
             label="Expected rain"
             value={`${weekRainIn.toFixed(2)} in`}
-            detail={
-              weekRainIn >= 0.1 ? "Enough to affect the schedule" : "Not enough to count on"
-            }
+            detail={weekRainIn >= 0.1 ? "Enough to affect the schedule" : "Not enough to count on"}
           />
           <Stat
             label="Planned water, whole farm"
@@ -156,7 +177,11 @@ export default async function FarmDashboard({
                     <td className="py-2 pr-3 font-medium">{d.etoIn.toFixed(3)} in</td>
                     <td
                       className={`py-2 text-xs font-semibold ${
-                        delta > 5 ? "text-alert-600" : delta < -5 ? "text-water-700" : "text-soil-600"
+                        delta > 5
+                          ? "text-alert-600"
+                          : delta < -5
+                            ? "text-water-700"
+                            : "text-soil-600"
                       }`}
                     >
                       {delta >= 0 ? "+" : ""}
@@ -186,7 +211,10 @@ export default async function FarmDashboard({
         {plans.length === 0 ? (
           <div className="card p-8 text-center text-sm text-soil-600">
             No fields yet.{" "}
-            <Link href={`/farms/${farmId}/fields/new`} className="font-semibold text-leaf-700 underline">
+            <Link
+              href={`/field/settings/?farm=${farm.id}`}
+              className="font-semibold text-leaf-700 underline"
+            >
               Add one
             </Link>
             .
@@ -202,7 +230,7 @@ export default async function FarmDashboard({
                     <div>
                       <h3 className="font-semibold">
                         <Link
-                          href={`/farms/${farmId}/fields/${field.id}`}
+                          href={`/field/?farm=${farm.id}&id=${field.id}`}
                           className="hover:text-leaf-700"
                         >
                           {field.name}
@@ -225,7 +253,7 @@ export default async function FarmDashboard({
                       suffix="gal"
                     />
                     <MiniStat
-                      label="Season to date"
+                      label="Season total"
                       value={plan.season.acreFeetPerAcre.toFixed(2)}
                       suffix="AF/ac"
                     />
@@ -245,20 +273,18 @@ export default async function FarmDashboard({
                       ))}
                     </ul>
                   ) : (
-                    <p className="mt-4 text-sm text-soil-600">
-                      No irrigation scheduled this week.
-                    </p>
+                    <p className="mt-4 text-sm text-soil-600">No irrigation scheduled this week.</p>
                   )}
 
                   <div className="mt-4 flex gap-2 pt-2">
                     <Link
-                      href={`/farms/${farmId}/fields/${field.id}`}
+                      href={`/field/?farm=${farm.id}&id=${field.id}`}
                       className="btn-secondary flex-1"
                     >
                       Full plan
                     </Link>
                     <Link
-                      href={`/farms/${farmId}/fields/${field.id}/print`}
+                      href={`/field/print/?farm=${farm.id}&id=${field.id}`}
                       className="btn-water flex-1"
                     >
                       Print week

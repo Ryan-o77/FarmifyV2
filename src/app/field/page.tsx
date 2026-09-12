@@ -1,18 +1,22 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getField, listFeedback } from "@/lib/store";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useStore, useToday } from "@/lib/useStore";
 import { buildFieldPlan, weekStartOf } from "@/lib/plan/engine";
 import { simplifyWeek } from "@/lib/plan/simplify";
-import { describeCalibration } from "@/lib/feedback";
+import { applyFeedback, describeCalibration } from "@/lib/feedback";
+import { recordFeedback, listFeedback } from "@/lib/clientStore";
 import { getCrop } from "@/lib/agronomy/crops";
 import { getSoil, totalAvailableWater, readilyAvailableWater } from "@/lib/agronomy/soils";
-import { toIsoDate, parseIsoDate } from "@/lib/climate/station";
+import { toIsoDate } from "@/lib/climate/station";
 import { SoilWaterChart, EtoChart, SoilGauge } from "@/components/Charts";
 import { SimplePlanCard } from "@/components/SimplePlanCard";
 import { FeedbackForm } from "@/components/FeedbackForm";
+import { Loading, NotFoundCard } from "@/components/Loading";
 import { t } from "@/lib/plan/i18n";
-
-export const dynamic = "force-dynamic";
+import { DEFAULT_CALIBRATION, type FeedbackKind } from "@/lib/types";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -24,34 +28,55 @@ const STAGE_LABELS: Record<string, string> = {
   late: "Late season",
 };
 
-export default async function FieldPlanPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ farmId: string; fieldId: string }>;
-  searchParams: Promise<{ week?: string; saved?: string }>;
-}) {
-  const { farmId, fieldId } = await params;
-  const { week: weekParam, saved } = await searchParams;
+export default function FieldPlanPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <FieldPlan />
+    </Suspense>
+  );
+}
 
-  const found = await getField(farmId, fieldId);
-  if (!found) notFound();
-  const { farm, field } = found;
+function FieldPlan() {
+  const params = useSearchParams();
+  const farmId = params.get("farm") ?? "";
+  const fieldId = params.get("id") ?? "";
+  const weekParam = params.get("week");
 
-  const today = new Date();
-  const plan = buildFieldPlan(farm, field, { referenceDate: today });
-  const feedback = await listFeedback(farmId, fieldId);
+  const { store, ready, refresh } = useStore();
+  const today = useToday();
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+  // Weeks are navigated in local state so paging through a season does not
+  // reload the page and rebuild every plan on the farm.
+  const [weekOverride, setWeekOverride] = useState<string | null>(weekParam);
+
+  const farm = store?.farms.find((f) => f.id === farmId) ?? null;
+  const field = farm?.fields.find((f) => f.id === fieldId) ?? null;
+
+  const plan = useMemo(() => {
+    if (!farm || !field || !today) return null;
+    return buildFieldPlan(farm, field, { referenceDate: today });
+  }, [farm, field, today]);
+
+  const feedback = useMemo(
+    () => (ready && farm && field ? listFeedback(farm.id, field.id) : []),
+    // `store` is the signal that persisted feedback changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ready, farm, field, store]
+  );
+
+  if (!ready || !today) return <Loading />;
+  if (!farm) return <NotFoundCard what="farm" />;
+  if (!field || !plan) {
+    return <NotFoundCard what="field" backHref={`/farm/?id=${farmId}`} backLabel="Back to farm" />;
+  }
+
   const crop = getCrop(field.cropId);
   const soil = getSoil(field.soilId);
 
-  // Which week are we looking at? Default to the current one, falling back to
-  // the first week of the season when the season has not started yet.
-  const defaultWeek = toIsoDate(
-    weekStartOf(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())))
-  );
+  const defaultWeek = toIsoDate(weekStartOf(today));
   const weeksWithWater = plan.weeks.filter((w) => w.events.length > 0);
   const activeWeekStart =
-    weekParam ??
+    weekOverride ??
     (plan.weeks.some((w) => w.weekStart === defaultWeek)
       ? defaultWeek
       : (weeksWithWater[0]?.weekStart ?? plan.weeks[0]?.weekStart));
@@ -60,11 +85,11 @@ export default async function FieldPlanPage({
 
   const weekIndex = activeWeek ? plan.weeks.indexOf(activeWeek) : -1;
   const prevWeek = weekIndex > 0 ? plan.weeks[weekIndex - 1] : null;
-  const nextWeek = weekIndex >= 0 && weekIndex < plan.weeks.length - 1 ? plan.weeks[weekIndex + 1] : null;
+  const nextWeek =
+    weekIndex >= 0 && weekIndex < plan.weeks.length - 1 ? plan.weeks[weekIndex + 1] : null;
 
   const simple = activeWeek ? simplifyWeek(plan, activeWeek, farm.language) : null;
 
-  // Soil state today, for the gauge.
   const todayIso = toIsoDate(today);
   const todayBalance =
     plan.balance.find((b) => b.date === todayIso) ?? plan.balance[plan.balance.length - 1];
@@ -78,16 +103,24 @@ export default async function FieldPlanPage({
   );
 
   const weekEnsemble = activeWeek
-    ? plan.ensemble.filter(
-        (d) => d.date >= activeWeek.weekStart && d.date <= activeWeek.weekEnd
-      )
+    ? plan.ensemble.filter((d) => d.date >= activeWeek.weekStart && d.date <= activeWeek.weekEnd)
     : [];
+
+  function handleFeedback(kind: FeedbackKind, date: string, comment?: string) {
+    if (!farm || !field) return;
+    const previous = field.calibration ?? DEFAULT_CALIBRATION;
+    const { calibration, note } = applyFeedback(previous, kind);
+    recordFeedback({ farmId: farm.id, fieldId: field.id, kind, date, comment }, calibration, previous);
+    setSavedNote(note);
+    refresh();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   return (
     <div className="space-y-8">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href={`/farms/${farmId}`} className="text-sm text-soil-600 hover:text-leaf-700">
+          <Link href={`/farm/?id=${farm.id}`} className="text-sm text-soil-600 hover:text-leaf-700">
             ← {farm.name}
           </Link>
           <h1 className="mt-2 text-2xl font-bold tracking-tight">{field.name}</h1>
@@ -98,22 +131,23 @@ export default async function FieldPlanPage({
         </div>
         <div className="flex gap-2">
           <Link
-            href={`/farms/${farmId}/fields/${fieldId}/print${
-              activeWeek ? `?week=${activeWeek.weekStart}` : ""
+            href={`/field/print/?farm=${farm.id}&id=${field.id}${
+              activeWeek ? `&week=${activeWeek.weekStart}` : ""
             }`}
             className="btn-water"
           >
             Print / save PDF
           </Link>
-          <Link href={`/farms/${farmId}/fields/${fieldId}/edit`} className="btn-secondary">
+          <Link href={`/field/settings/?farm=${farm.id}&id=${field.id}`} className="btn-secondary">
             Edit field
           </Link>
         </div>
       </header>
 
-      {saved ? (
+      {savedNote ? (
         <div className="rounded-lg border border-leaf-200 bg-leaf-50 px-4 py-3 text-sm text-leaf-900">
-          Thank you — your report was recorded and the plan below has already been adjusted.
+          Thank you — your report was recorded and the plan below has already been adjusted.{" "}
+          {savedNote}
         </div>
       ) : null}
 
@@ -128,37 +162,34 @@ export default async function FieldPlanPage({
         </section>
       ) : null}
 
-      {/* ---------------- Week navigation ---------------- */}
       {activeWeek ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">
             Week of {activeWeek.weekStart} to {activeWeek.weekEnd}
           </h2>
           <div className="flex gap-2">
-            {prevWeek ? (
-              <Link
-                href={`/farms/${farmId}/fields/${fieldId}?week=${prevWeek.weekStart}`}
-                className="btn-secondary"
-              >
-                ← Previous week
-              </Link>
-            ) : null}
-            {nextWeek ? (
-              <Link
-                href={`/farms/${farmId}/fields/${fieldId}?week=${nextWeek.weekStart}`}
-                className="btn-secondary"
-              >
-                Next week →
-              </Link>
-            ) : null}
+            <button
+              type="button"
+              className="btn-secondary disabled:opacity-40"
+              disabled={!prevWeek}
+              onClick={() => prevWeek && setWeekOverride(prevWeek.weekStart)}
+            >
+              ← Previous week
+            </button>
+            <button
+              type="button"
+              className="btn-secondary disabled:opacity-40"
+              disabled={!nextWeek}
+              onClick={() => nextWeek && setWeekOverride(nextWeek.weekStart)}
+            >
+              Next week →
+            </button>
           </div>
         </div>
       ) : null}
 
-      {/* ---------------- Simple summary ---------------- */}
       {simple ? <SimplePlanCard summary={simple} /> : null}
 
-      {/* ---------------- Detailed schedule ---------------- */}
       {activeWeek && activeWeek.events.length > 0 ? (
         <section className="card p-6">
           <h2 className="text-lg font-semibold">The detailed schedule</h2>
@@ -169,10 +200,7 @@ export default async function FieldPlanPage({
 
           <div className="mt-5 space-y-4">
             {activeWeek.events.map((event) => (
-              <article
-                key={event.date}
-                className="rounded-lg border border-soil-100 bg-soil-50/50 p-4"
-              >
+              <article key={event.date} className="rounded-lg border border-soil-100 bg-soil-50/50 p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h3 className="font-semibold">
                     {DAY_NAMES[event.weekday]}, {event.date}
@@ -240,14 +268,14 @@ export default async function FieldPlanPage({
         <section className="card p-6">
           <h2 className="text-lg font-semibold">No irrigation this week</h2>
           <p className="mt-1 text-sm text-soil-600">
-            {crop.perennial && plan.balance.find((b) => b.date === activeWeek.weekStart)?.stage === "dormant"
+            {crop.perennial &&
+            plan.balance.find((b) => b.date === activeWeek.weekStart)?.stage === "dormant"
               ? "The crop is dormant. Water use is close to zero until leaf-out."
               : "The soil still holds enough water to carry the crop through this week."}
           </p>
         </section>
       ) : null}
 
-      {/* ---------------- Weather behind the plan ---------------- */}
       {weekEnsemble.length > 0 ? (
         <section className="card p-6">
           <h2 className="text-lg font-semibold">The weather this plan assumes</h2>
@@ -261,7 +289,6 @@ export default async function FieldPlanPage({
         </section>
       ) : null}
 
-      {/* ---------------- Soil water through the season ---------------- */}
       <section className="card p-6">
         <h2 className="text-lg font-semibold">Soil water through the season</h2>
         <p className="mt-1 text-sm text-soil-600">
@@ -285,16 +312,19 @@ export default async function FieldPlanPage({
         ) : null}
       </section>
 
-      {/* ---------------- Season summary ---------------- */}
       <section className="card p-6">
         <h2 className="text-lg font-semibold">The season</h2>
         <p className="mt-1 text-sm text-soil-600">
-          {plan.season.startDate} to {plan.season.endDate} · {STAGE_LABELS[todayBalance?.stage ?? "mid"]}{" "}
-          right now
+          {plan.season.startDate} to {plan.season.endDate} ·{" "}
+          {STAGE_LABELS[todayBalance?.stage ?? "mid"]} right now
         </p>
 
         <dl className="mt-4 grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          <Detail label="Reference ET" value={`${plan.season.etoIn.toFixed(1)} in`} detail="Grass reference" />
+          <Detail
+            label="Reference ET"
+            value={`${plan.season.etoIn.toFixed(1)} in`}
+            detail="Grass reference"
+          />
           <Detail
             label="Crop will use"
             value={`${plan.season.etcIn.toFixed(1)} in`}
@@ -364,18 +394,15 @@ export default async function FieldPlanPage({
         </div>
       </section>
 
-      {/* ---------------- Feedback ---------------- */}
       <section className="card p-6">
         <h2 className="text-lg font-semibold">Tell Farmify how it went</h2>
-        <p className="mt-1 max-w-2xl text-sm text-soil-600">
-          {t(farm.language, "plan.feedbackAsk")}
-        </p>
+        <p className="mt-1 max-w-2xl text-sm text-soil-600">{t(farm.language, "plan.feedbackAsk")}</p>
         <p className="mt-2 max-w-2xl text-sm font-medium text-leaf-700">
           {describeCalibration(field.calibration)}
         </p>
 
         <div className="mt-5">
-          <FeedbackForm farmId={farmId} fieldId={fieldId} language={farm.language} />
+          <FeedbackForm language={farm.language} onSubmit={handleFeedback} />
         </div>
 
         {feedback.length > 0 ? (
@@ -390,8 +417,13 @@ export default async function FieldPlanPage({
                   </span>
                   {f.applied ? (
                     <span className="text-xs text-soil-600">
-                      water use {formatDelta(f.applied.demandFactorBefore, f.applied.demandFactorAfter)}, run
-                      time {formatDelta(f.applied.applicationFactorAfter, f.applied.applicationFactorBefore)}
+                      water use{" "}
+                      {formatDelta(f.applied.demandFactorBefore, f.applied.demandFactorAfter)}, run
+                      time{" "}
+                      {formatDelta(
+                        f.applied.applicationFactorAfter,
+                        f.applied.applicationFactorBefore
+                      )}
                     </span>
                   ) : null}
                   {f.comment ? <span className="text-soil-600">“{f.comment}”</span> : null}
@@ -428,15 +460,7 @@ function formatDelta(before: number, after: number): string {
   return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
-function Detail({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-}) {
+function Detail({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div>
       <dt className="text-xs font-medium uppercase tracking-wide text-soil-600">{label}</dt>

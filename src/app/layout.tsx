@@ -27,10 +27,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/" className="hover:text-leaf-700">
                 Farms
               </Link>
-              <Link href="/climate" className="hover:text-leaf-700">
+              <Link href="/climate/" className="hover:text-leaf-700">
                 Climate data
               </Link>
-              <Link href="/method" className="hover:text-leaf-700">
+              <Link href="/method/" className="hover:text-leaf-700">
                 How it works
               </Link>
             </nav>
@@ -57,6 +57,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <p className="mt-1">
               Farmify produces a starting point, not a prescription. Check your own soil and
               trees, and tell the app when it is wrong — that is how the plan improves.
+            </p>
+            <p className="mt-1">
+              No account, no server: every farm you enter stays in this browser and is never
+              sent anywhere. Keep a backup file from the home page if the records matter.
             </p>
           </div>
         </footer>

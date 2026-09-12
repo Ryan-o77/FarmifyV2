@@ -65,14 +65,49 @@ npm run dev          # http://localhost:3000
 ```
 
 ```bash
-npm test             # 67 tests
+npm test             # 81 tests
 npm run typecheck
-npm run build && npm start
+npm run build        # writes the whole site to out/
+npx serve out        # or any static file server
 ```
 
 The app seeds a worked example farm on first run, so there is something to look at
-immediately. Data lives in `data/store/farms.json` — a single file you can copy, back up
-and read without special software, which is more useful for a farm office than a database.
+immediately.
+
+## Publishing it
+
+`npm run build` produces `out/` — a plain folder of HTML, CSS and JavaScript, about 1.5 MB.
+There is no server and no database, so it hosts free anywhere.
+
+**Vercel** — go to [vercel.com/new](https://vercel.com/new), sign in with GitHub, import
+this repository, and press Deploy. The settings in `vercel.json` are picked up
+automatically; nothing needs configuring. The repository can stay private.
+
+**Netlify** — go to [app.netlify.com/start](https://app.netlify.com/start), pick this
+repository, and deploy. `netlify.toml` already sets the build command and publish
+directory.
+
+**Cloudflare Pages, GitHub Pages, S3, or a USB stick** — upload `out/`. The only thing to
+know is that GitHub Pages serves from a subpath, so that one needs
+`basePath: "/FarmifyV2"` added to `next.config.mjs` first.
+
+Every push to the deployed branch rebuilds the site.
+
+## Where your data lives
+
+In your browser, and nowhere else. There is no account, no server and no analytics: farms,
+fields and feedback are held in `localStorage` on the device you entered them on, and are
+never transmitted.
+
+That is the right arrangement for a public tool rather than a compromise. A shared
+server-side store on a public URL would mean every visitor editing the same farms, and it
+would put someone's field data, water allocation and yield estimates on a machine they do
+not control. It also means the whole application keeps working with the network unplugged,
+which matters more than it sounds like for a tool meant to be used in the valley.
+
+The cost is that clearing your browser data erases your farms. The home page therefore has
+**Download backup** and **Restore from file**, which write the workspace out as JSON you
+own — keep one if the records matter.
 
 ## Refreshing the weather record
 
@@ -132,9 +167,13 @@ scripts/           Refresh the record from the live history API
 src/lib/climate/   Penman-Monteith ETo, station climatology, forecast generator
 src/lib/agronomy/  Crop coefficients, soils, irrigation systems, water balance, rationing
 src/lib/plan/      Plan engine, plain-language simplifier, translations
-src/app/           Pages and server actions
-tests/             FAO-56 validation and engine property tests
+src/lib/clientStore.ts   Browser persistence, backup and restore
+src/app/           Pages (all statically exported, all rendered in the browser)
+tests/             FAO-56 validation, engine property tests, store tests
 ```
+
+The whole agronomic engine is pure TypeScript with no I/O, which is what lets the same code
+run in a test, on a server, or in a phone browser with no connection.
 
 ## What this is not
 

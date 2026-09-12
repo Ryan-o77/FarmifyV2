@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { CROPS } from "@/lib/agronomy/crops";
 import { SOILS } from "@/lib/agronomy/soils";
 import { SYSTEMS } from "@/lib/agronomy/systems";
+import { parseFieldForm } from "@/lib/formParse";
 import type { Field } from "@/lib/types";
 
 const WEEKDAYS = [
@@ -24,18 +27,24 @@ const WEEKDAYS = [
 export function FieldForm({
   farmId,
   field,
-  action,
+  onSave,
   submitLabel,
 }: {
   farmId: string;
   field?: Field;
-  action: (form: FormData) => Promise<void>;
+  onSave: (input: Omit<Field, "id"> & { id?: string }) => void;
   submitLabel: string;
 }) {
   const allowed = new Set(field?.constraints.allowedWeekdays ?? [0, 1, 2, 3, 4, 5, 6]);
 
   return (
-    <form action={action} className="space-y-6">
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(parseFieldForm(new FormData(event.currentTarget)));
+      }}
+      className="space-y-6"
+    >
       {field ? <input type="hidden" name="fieldId" value={field.id} /> : null}
 
       <section className="card space-y-5 p-6">
@@ -441,7 +450,7 @@ export function FieldForm({
         <button type="submit" className="btn-primary">
           {submitLabel}
         </button>
-        <Link href={`/farms/${farmId}`} className="btn-secondary">
+        <Link href={`/farm/?id=${farmId}`} className="btn-secondary">
           Cancel
         </Link>
       </div>

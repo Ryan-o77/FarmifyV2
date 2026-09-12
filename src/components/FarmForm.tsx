@@ -1,20 +1,29 @@
+"use client";
+
 import Link from "next/link";
 import { stations } from "@/lib/climate/station";
+import { parseFarmForm, type FarmInput } from "@/lib/formParse";
 import { LANGUAGES, type Farm } from "@/lib/types";
 
 export function FarmForm({
   farm,
-  action,
+  onSave,
   submitLabel,
   cancelHref,
 }: {
   farm?: Farm;
-  action: (form: FormData) => Promise<void>;
+  onSave: (input: FarmInput) => void;
   submitLabel: string;
   cancelHref: string;
 }) {
   return (
-    <form action={action} className="card space-y-5 p-6">
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(parseFarmForm(new FormData(event.currentTarget)));
+      }}
+      className="card space-y-5 p-6"
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="label" htmlFor="name">

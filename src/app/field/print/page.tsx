@@ -1,13 +1,15 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getField } from "@/lib/store";
+import { Suspense, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { useStore, useToday } from "@/lib/useStore";
 import { buildFieldPlan, weekStartOf } from "@/lib/plan/engine";
 import { simplifyWeek } from "@/lib/plan/simplify";
 import { toIsoDate } from "@/lib/climate/station";
 import { t } from "@/lib/plan/i18n";
 import { PrintButton } from "@/components/PrintButton";
-
-export const dynamic = "force-dynamic";
+import { Loading, NotFoundCard } from "@/components/Loading";
 
 /**
  * The printable weekly plan.
@@ -19,29 +21,41 @@ export const dynamic = "force-dynamic";
  * agronomist or a district can check the numbers.
  *
  * "Save as PDF" in the browser's print dialog is what produces the PDF. That is a
- * deliberate choice over generating one server-side: it needs no dependency, it
- * prints identically to what is on screen, and it works offline.
+ * deliberate choice over generating one in code: it needs no dependency, it
+ * prints exactly what is on screen, and it works with no network at all.
  */
-export default async function PrintPlanPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ farmId: string; fieldId: string }>;
-  searchParams: Promise<{ week?: string }>;
-}) {
-  const { farmId, fieldId } = await params;
-  const { week: weekParam } = await searchParams;
-
-  const found = await getField(farmId, fieldId);
-  if (!found) notFound();
-  const { farm, field } = found;
-
-  const today = new Date();
-  const plan = buildFieldPlan(farm, field, { referenceDate: today });
-
-  const defaultWeek = toIsoDate(
-    weekStartOf(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())))
+export default function PrintPlanPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <PrintPlan />
+    </Suspense>
   );
+}
+
+function PrintPlan() {
+  const params = useSearchParams();
+  const farmId = params.get("farm") ?? "";
+  const fieldId = params.get("id") ?? "";
+  const weekParam = params.get("week");
+
+  const { store, ready } = useStore();
+  const today = useToday();
+
+  const farm = store?.farms.find((f) => f.id === farmId) ?? null;
+  const field = farm?.fields.find((f) => f.id === fieldId) ?? null;
+
+  const plan = useMemo(() => {
+    if (!farm || !field || !today) return null;
+    return buildFieldPlan(farm, field, { referenceDate: today });
+  }, [farm, field, today]);
+
+  if (!ready || !today) return <Loading label="Building the plan…" />;
+  if (!farm) return <NotFoundCard what="farm" />;
+  if (!field || !plan) {
+    return <NotFoundCard what="field" backHref={`/farm/?id=${farmId}`} backLabel="Back to farm" />;
+  }
+
+  const defaultWeek = toIsoDate(weekStartOf(today));
   const weeksWithWater = plan.weeks.filter((w) => w.events.length > 0);
   const activeWeekStart =
     weekParam ??
@@ -50,7 +64,10 @@ export default async function PrintPlanPage({
       : (weeksWithWater[0]?.weekStart ?? plan.weeks[0]?.weekStart));
   const week = plan.weeks.find((w) => w.weekStart === activeWeekStart) ?? plan.weeks[0];
 
-  if (!week) notFound();
+  if (!week) {
+    return <NotFoundCard what="week" backHref={`/farm/?id=${farmId}`} backLabel="Back to farm" />;
+  }
+
   const simple = simplifyWeek(plan, week, farm.language);
   const tr = (key: string) => t(farm.language, key as never);
 
@@ -58,7 +75,7 @@ export default async function PrintPlanPage({
     <div className="mx-auto max-w-3xl">
       <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3">
         <Link
-          href={`/farms/${farmId}/fields/${fieldId}?week=${week.weekStart}`}
+          href={`/field/?farm=${farm.id}&id=${field.id}&week=${week.weekStart}`}
           className="text-sm text-soil-600 hover:text-leaf-700"
         >
           ← Back to the plan
@@ -222,7 +239,10 @@ export default async function PrintPlanPage({
           <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
             <Row label="Soil" value={plan.soilName} />
             <Row label="System" value={plan.systemName} />
-            <Row label="Application rate" value={`${plan.applicationRateInPerHr.toFixed(3)} in/hr`} />
+            <Row
+              label="Application rate"
+              value={`${plan.applicationRateInPerHr.toFixed(3)} in/hr`}
+            />
             <Row label="Week ETc" value={`${week.etcInches.toFixed(2)} in`} />
             <Row label="Week rain" value={`${week.rainInches.toFixed(2)} in`} />
             <Row label="Peak temperature" value={`${Math.round(week.peakTempF)} °F`} />
@@ -247,7 +267,8 @@ export default async function PrintPlanPage({
             Reference evapotranspiration by FAO-56 Penman-Monteith from the {plan.stationId} (
             {plan.stationName}) record published by Weather Underground, bias-corrected to the
             CIMIS reference network. Crop coefficients follow FAO-56 with California extension
-            values for San Joaquin Valley plantings. Printed {new Date().toISOString().slice(0, 10)}.
+            values for San Joaquin Valley plantings. Printed{" "}
+            {new Date().toISOString().slice(0, 10)}.
           </p>
         </section>
       </article>

@@ -1,4 +1,5 @@
-import { submitFeedbackAction } from "@/app/actions";
+"use client";
+
 import { t } from "@/lib/plan/i18n";
 import type { FeedbackKind, Language } from "@/lib/types";
 
@@ -35,19 +36,27 @@ const OPTIONS: { kind: FeedbackKind; key: string; hint: string }[] = [
  * worth anything.
  */
 export function FeedbackForm({
-  farmId,
-  fieldId,
   language,
+  onSubmit,
 }: {
-  farmId: string;
-  fieldId: string;
   language: Language;
+  onSubmit: (kind: FeedbackKind, date: string, comment?: string) => void;
 }) {
-  const submit = submitFeedbackAction.bind(null, farmId, fieldId);
   const todayIso = new Date().toISOString().slice(0, 10);
 
   return (
-    <form action={submit} className="space-y-4">
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        const kind = (data.get("kind") as FeedbackKind) ?? "just-right";
+        const date = (data.get("date") as string) || todayIso;
+        const comment = ((data.get("comment") as string) || "").trim();
+        onSubmit(kind, date, comment || undefined);
+        event.currentTarget.reset();
+      }}
+      className="space-y-4"
+    >
       <fieldset>
         <legend className="label">What did the ground look like?</legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

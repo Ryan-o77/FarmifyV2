@@ -1,8 +1,9 @@
 node_modules/
 .next/
 out/
+.vercel/
+.netlify/
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
-data/store/
 .DS_Store
