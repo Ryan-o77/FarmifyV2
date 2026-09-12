@@ -99,6 +99,12 @@ the deploy does not depend on how it was configured at import. Check that
 repository, and deploy. `netlify.toml` already sets the build command and publish
 directory.
 
+> `vercel.json` cannot carry comments. JSON has no comment syntax, and Vercel validates the
+> file against a strict schema and rejects any top-level key it does not recognise — a `"//"`
+> key fails the deployment in about two seconds, before a build is even attempted. If you
+> see a deployment fail almost instantly with no build log, suspect the config file rather
+> than the code.
+
 **Cloudflare Pages, GitHub Pages, S3, or a USB stick** — upload `out/`. The only thing to
 know is that GitHub Pages serves from a subpath, so that one needs
 `basePath: "/FarmifyV2"` added to `next.config.mjs` first.

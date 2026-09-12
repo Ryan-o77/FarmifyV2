@@ -1,23 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-
-  "//": [
-    "Farmify builds to a plain folder of static files, so it is deployed as a",
-    "static site rather than through the Next.js runtime. `framework: null` is",
-    "the load-bearing part: without it Vercel detects Next.js, takes over output",
-    "resolution, and ignoring or fighting `outputDirectory` leaves it serving",
-    "nothing, which surfaces as a 404 on every route. Settings here override the",
-    "project's dashboard settings, so the deploy does not depend on how the",
-    "project happened to be configured when it was first imported."
-  ],
-
   "framework": null,
-  "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "out",
-
   "trailingSlash": true,
-
   "headers": [
     {
       "source": "/_next/static/(.*)",
