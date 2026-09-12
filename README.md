@@ -66,10 +66,18 @@ npm run dev          # http://localhost:3000
 
 ```bash
 npm test             # 81 tests
-npm run typecheck
+npm run typecheck    # app and test suite, separately
 npm run build        # writes the whole site to out/
 npx serve out        # or any static file server
 ```
+
+Everything needed to *produce* the site lives in `dependencies` rather than
+`devDependencies`: a build host that installs with `NODE_ENV=production` skips dev
+packages, and without TypeScript, Next cannot read the path aliases in `tsconfig.json`, so
+every `@/…` import fails to resolve and the build dies. For the same reason
+`tsconfig.json` excludes the test suite — type-checking tests during `next build` would
+drag the test runner into the build's dependency graph. `tsconfig.test.json` covers them
+instead, and `npm run typecheck` runs both.
 
 The app seeds a worked example farm on first run, so there is something to look at
 immediately.
@@ -80,11 +88,12 @@ immediately.
 There is no server and no database, so it hosts free anywhere.
 
 **Vercel** — go to [vercel.com/new](https://vercel.com/new), sign in with GitHub, import
-this repository, and press Deploy. Vercel detects `output: "export"` in `next.config.mjs`
-and serves the exported site; there is deliberately no `vercel.json`, because overriding
-the output directory for a Next.js project conflicts with that detection and produces a
-site where every URL 404s. Check that **Settings → Git → Production Branch** points at the
-branch holding the app. The repository can stay private.
+this repository, and press Deploy. `vercel.json` deploys it as a static site rather than
+through the Next.js runtime; `framework: null` is the load-bearing part, because Vercel
+otherwise detects Next.js, takes over output resolution, and serves nothing, which shows up
+as a 404 on every route. Those settings override whatever the project's dashboard holds, so
+the deploy does not depend on how it was configured at import. Check that
+**Settings → Git → Production Branch** points at the branch holding the app.
 
 **Netlify** — go to [app.netlify.com/start](https://app.netlify.com/start), pick this
 repository, and deploy. `netlify.toml` already sets the build command and publish

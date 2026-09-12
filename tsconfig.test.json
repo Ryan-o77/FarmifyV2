@@ -1,0 +1,9 @@
+{
+  // Type coverage for the test suite and the tooling config, kept out of the
+  // production build. Run by `npm run typecheck` alongside the app's own config.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["tests/**/*.ts", "vitest.config.ts", "src/**/*.ts", "src/**/*.tsx"]
+}

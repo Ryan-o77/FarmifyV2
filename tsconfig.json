@@ -16,6 +16,11 @@
     "plugins": [{ "name": "next" }],
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts"],
+  // The production build must not depend on anything that is only installed for
+  // development. Type-checking the test suite during `next build` drags the test
+  // runner into the build's dependency graph, so a host that installs with
+  // NODE_ENV=production (skipping devDependencies) fails to compile. Tests are
+  // still fully type-checked -- see tsconfig.test.json and `npm run typecheck`.
+  "exclude": ["node_modules", "tests", "vitest.config.ts", "scripts", "out"]
 }
