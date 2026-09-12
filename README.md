@@ -80,8 +80,11 @@ immediately.
 There is no server and no database, so it hosts free anywhere.
 
 **Vercel** — go to [vercel.com/new](https://vercel.com/new), sign in with GitHub, import
-this repository, and press Deploy. The settings in `vercel.json` are picked up
-automatically; nothing needs configuring. The repository can stay private.
+this repository, and press Deploy. Vercel detects `output: "export"` in `next.config.mjs`
+and serves the exported site; there is deliberately no `vercel.json`, because overriding
+the output directory for a Next.js project conflicts with that detection and produces a
+site where every URL 404s. Check that **Settings → Git → Production Branch** points at the
+branch holding the app. The repository can stay private.
 
 **Netlify** — go to [app.netlify.com/start](https://app.netlify.com/start), pick this
 repository, and deploy. `netlify.toml` already sets the build command and publish

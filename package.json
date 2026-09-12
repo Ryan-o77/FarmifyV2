@@ -3,6 +3,9 @@
   "version": "2.0.0",
   "private": true,
   "description": "Irrigation optimization for San Joaquin Valley farms using historical Weather Underground data and predictive modeling.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
